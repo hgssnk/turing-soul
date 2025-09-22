@@ -1,0 +1,64 @@
+name: Update README
+
+# 手動トリガー設定
+on:
+  workflow_dispatch:
+    inputs:
+      files:
+        description: '対象ファイル(カンマ区切りで複数可能)'
+        required: false
+        default: 'main.py'
+      model:
+        description: '使用するGeminiモデル'
+        required: false
+        default: 'gemini-2.0-flash'
+      branch:
+        description: '出力先ブランチ'
+        required: false
+        default: 'main'
+      output:
+        description: '出力ファイル名'
+        required: false
+        default: 'README.md'
+
+jobs:
+  update-readme:
+    runs-on: ubuntu-latest
+    environment: production  # 承認設定可能
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          persist-credentials: false  # PAT を使う場合は false
+
+          
+      # Pythonセットアップ
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      # 依存ライブラリインストール
+      - name: Install dependencies
+        run: pip install requests
+
+      # README生成
+      - name: Generate README
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL_NAME: ${{ github.event.inputs.model }}
+          TARGET_FILES: ${{ github.event.inputs.files }}
+          OUTPUT_FILE: ${{ github.event.inputs.output }}
+        run: python .github/scripts/create_readme.py
+
+      # READMEをコミット＆push（PAT使用）
+      - name: Commit and push
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          git add README.md
+          git commit -m "chore: update README from Gemini" || echo "No changes to commit"
+          git push https://x-access-token:${GH_PAT}@github.com/${{ github.repository }} HEAD:${{ github.event.inputs.branch }}
+

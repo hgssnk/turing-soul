@@ -1,0 +1,139 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Serverless application with HTTP API, Lambda, and DynamoDB supporting CRUD operations.
+
+Resources:
+  MyDynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties: 
+      TableName: MyDynamoDBTable
+      AttributeDefinitions: 
+        - AttributeName: id
+          AttributeType: S
+      KeySchema: 
+        - AttributeName: id
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+  
+  MyLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: MyLambdaFunction
+      Handler: index.handler
+      Runtime: python3.9
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          from boto3.dynamodb.conditions import Key
+          
+          dynamodb = boto3.resource('dynamodb')
+          table = dynamodb.Table('MyDynamoDBTable')
+          
+          def handler(event, context):
+              http_method = event['requestContext']['http']['method']
+              
+              if http_method == 'GET':
+                  item_id = event['pathParameters']['id']
+                  response = table.get_item(Key={'id': item_id})
+                  return {
+                      'statusCode': 200,
+                      'body': json.dumps(response.get('Item', 'Item not found'))
+                  }
+              
+              elif http_method == 'POST':
+                  body = json.loads(event['body'])
+                  table.put_item(Item=body)
+                  return {
+                      'statusCode': 200,
+                      'body': json.dumps('Item created')
+                  }
+              
+              elif http_method == 'PUT':
+                  item_id = event['pathParameters']['id']
+                  body = json.loads(event['body'])
+                  table.update_item(
+                      Key={'id': item_id},
+                      UpdateExpression="set info=:info",
+                      ExpressionAttributeValues={':info': body['info']},
+                      ReturnValues="UPDATED_NEW"
+                  )
+                  return {
+                      'statusCode': 200,
+                      'body': json.dumps('Item updated')
+                  }
+              
+              elif http_method == 'DELETE':
+                  item_id = event['pathParameters']['id']
+                  table.delete_item(Key={'id': item_id})
+                  return {
+                      'statusCode': 200,
+                      'body': json.dumps('Item deleted')
+                  }
+              
+              return {
+                  'statusCode': 400,
+                  'body': json.dumps('Unsupported method')
+              }
+
+  MyHttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: MyServerlessHttpApi
+      ProtocolType: HTTP
+
+  MyHttpApiRouteItems:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref MyHttpApi
+      RouteKey: 'ANY /items/{id}'
+      Target: !Join 
+        - /
+        - - integrations
+          - !Ref MyHttpApiIntegration
+
+  MyHttpApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref MyHttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri:
+        Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${MyLambdaFunction.Arn}/invocations
+      PayloadFormatVersion: '2.0'
+
+  MyHttpApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref MyHttpApi
+      StageName: $default
+      AutoDeploy: true
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: LambdaDynamoDBPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                Resource: !GetAtt MyDynamoDBTable.Arn
+
+  LambdaApiPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref MyLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
