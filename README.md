@@ -2,25 +2,31 @@
 
 ## 1. 概略
 
-このPythonスクリプトは、指定された時系列データファイルを読み込み、Gemini APIを使ってデータの分析と解釈を行います。分析結果のテキストをファイルに保存し、OpenAI APIを使ってテキストを音声に変換します。最後に、生成された音声ファイルをLINE Messaging APIを通じてユーザーに送信します。全体として、データ分析、テキスト生成、音声変換、メッセージングという複数の機能を連携させて自動化するパイプラインを構築しています。
+このPythonスクリプトは、指定された時系列データファイルを読み込み、Geminiモデルを使用してデータの詳細な分析を行います。分析結果はファイルに保存され、OpenAIのテキスト読み上げAPIを使用して音声ファイルに変換されます。最後に、生成された音声ファイルのURLをLINEに送信します。全体として、データ分析、テキスト生成、音声合成、メッセージ送信を自動化するパイプラインとして機能します。
 
 ## 2. アーキテクチャ図
 
 ```mermaid
 graph LR
-    A[データファイル] --> B(get_file);
-    B --> C{Gemini API};
-    C -- プロンプト生成 --> D(create_request_payload);
-    D --> E(get_response);
-    E --> F(extract_generated_text);
-    F --> G[分析結果(テキスト)];
-    G --> H(save_file);
-    G --> I{OpenAI API};
-    I -- テキスト --> J(get_voice);
-    J --> K[音声ファイル];
-    K --> L{LINE Messaging API};
-    L -- 音声URL --> M(post_line_voice);
-    M --> N[LINEにメッセージ送信];
+    A[データファイル] --> B(get_file)
+    B --> C(get_prompt)
+    C --> D(create_request_payload)
+    D --> E(get_response)
+    E --> F(extract_generated_text)
+    F --> G(save_file)
+    F --> H(get_voice)
+    H --> I(post_line_voice)
+    E --> J[Gemini API]
+    H --> K[OpenAI API]
+    I --> L[LINE API]
+    G --> M[ログファイル]
+    H --> N[音声ファイル]
+    style A fill:#f9f,stroke:#333,stroke-width:2px
+    style M fill:#f9f,stroke:#333,stroke-width:2px
+    style N fill:#f9f,stroke:#333,stroke-width:2px
+    style J fill:#ccf,stroke:#333,stroke-width:2px
+    style K fill:#ccf,stroke:#333,stroke-width:2px
+    style L fill:#ccf,stroke:#333,stroke-width:2px
 ```
 
 ## 3. シーケンス図
@@ -29,75 +35,116 @@ graph LR
 sequenceDiagram
     participant Main
     participant get_file
-    participant GeminiAPI
-    participant OpenAIAPI
-    participant LineAPI
+    participant get_prompt
+    participant create_request_payload
+    participant get_response
+    participant Gemini API
+    participant extract_generated_text
     participant save_file
+    participant get_voice
+    participant OpenAI API
+    participant post_line_voice
+    participant LINE API
 
     Main->>get_file: get_file(TARGET_FILE)
     activate get_file
     get_file-->>Main: text_data
     deactivate get_file
-    Main->>GeminiAPI: get_prompt(text_data) & create_request_payload() & get_response() & extract_generated_text()
-    activate GeminiAPI
-    GeminiAPI-->>Main: response_text
-    deactivate GeminiAPI
+
+    Main->>get_prompt: get_prompt(text_data)
+    activate get_prompt
+    get_prompt-->>Main: prompt
+    deactivate get_prompt
+
+    Main->>create_request_payload: create_request_payload(prompt)
+    activate create_request_payload
+    create_request_payload-->>Main: payload
+    deactivate create_request_payload
+
+    Main->>get_response: get_response(GEMINI_ENDPOINT, payload)
+    activate get_response
+    get_response->>Gemini API: POST request
+    activate Gemini API
+    Gemini API-->>get_response: response_json
+    deactivate Gemini API
+    get_response-->>Main: response_json
+    deactivate get_response
+
+    Main->>extract_generated_text: extract_generated_text(response_json)
+    activate extract_generated_text
+    extract_generated_text-->>Main: response_text
+    deactivate extract_generated_text
+
     Main->>save_file: save_file(response_text, file_name_log)
     activate save_file
     save_file-->>Main:
     deactivate save_file
-    Main->>OpenAIAPI: get_voice(response_text, file_full_path)
-    activate OpenAIAPI
-    OpenAIAPI-->>Main:
-    deactivate OpenAIAPI
-    Main->>LineAPI: post_line_voice(url, LINE_ENDPOINT)
-    activate LineAPI
-    LineAPI-->>Main:
-    deactivate LineAPI
+
+    Main->>get_voice: get_voice(response_text, file_full_path, OPENAI_API_KEY, "alloy")
+    activate get_voice
+    get_voice->>OpenAI API: create speech
+    activate OpenAI API
+    OpenAI API-->>get_voice: audio file
+    deactivate OpenAI API
+    get_voice-->>Main:
+    deactivate get_voice
+
+    Main->>post_line_voice: post_line_voice(url, LINE_ENDPOINT, CHANNEL_ACCESS_TOKEN)
+    activate post_line_voice
+    post_line_voice->>LINE API: POST request
+    activate LINE API
+    LINE API-->>post_line_voice: response
+    deactivate LINE API
+    post_line_voice-->>Main: response
+    deactivate post_line_voice
 ```
 
 ## 4. フローチャート
 
 ```mermaid
 graph TD
-    A[開始] --> B{ファイル読み込み};
-    B -- 成功 --> C{Gemini API 呼び出し};
-    B -- 失敗 --> E[エラー処理];
-    C -- 成功 --> D{結果保存};
-    C -- 失敗 --> E;
-    D -- 成功 --> F{音声変換};
-    D -- 失敗 --> E;
-    F -- 成功 --> G{LINE送信};
-    F -- 失敗 --> E;
-    G -- 成功 --> H[終了];
-    G -- 失敗 --> E;
-    E --> H;
+    A[開始] --> B{ファイル読み込み成功?}
+    B -- Yes --> C{プロンプト作成成功?}
+    B -- No --> E[エラー処理: ファイル読み込み失敗]
+    C -- Yes --> D{Gemini API呼び出し成功?}
+    C -- No --> F[エラー処理: プロンプト作成失敗]
+    D -- Yes --> G{テキスト抽出成功?}
+    D -- No --> H[エラー処理: Gemini API呼び出し失敗]
+    G -- Yes --> I{ファイル保存成功?}
+    G -- No --> K[エラー処理: テキスト抽出失敗]
+    I -- Yes --> J{音声変換成功?}
+    I -- No --> L[エラー処理: ファイル保存失敗]
+    J -- Yes --> M{LINE送信成功?}
+    J -- No --> N[エラー処理: 音声変換失敗]
+    M -- Yes --> O[終了]
+    M -- No --> P[エラー処理: LINE送信失敗]
+    E --> O
+    F --> O
+    H --> O
+    K --> O
+    L --> O
+    N --> O
+    P --> O
 ```
 
 ## 5. 拡張性
 
-*   **APIの抽象化:** Gemini API, OpenAI API, LINE APIへの依存を抽象化し、インターフェースを定義することで、将来的に他のAPIプロバイダーに容易に切り替えられるように設計できます。例えば、`TextAnalyzer`, `TextToSpeechConverter`, `MessageSender`のような抽象クラスを作成し、それぞれのAPIに対応した具象クラスを実装します。
-*   **設定ファイルの利用:** APIキー、ファイルパス、モデル名などの設定値をコードにハードコーディングするのではなく、設定ファイル（例：YAML, JSON）から読み込むように変更することで、環境に合わせた設定が容易になります。
-*   **ログ出力の改善:** より詳細なログを出力できるようにします。例えば、ロギングライブラリ（`logging`モジュール）を使用し、ログレベル（DEBUG, INFO, WARNING, ERROR, CRITICAL）を設定できるようにします。
-*   **エラー処理の改善:** 現在のエラー処理は例外をキャッチしてメッセージを表示するだけですが、より詳細なエラー情報（スタックトレースなど）をログに出力し、必要に応じてリトライ処理を行うように改善できます。
-*   **並列処理の導入:** データ分析、音声変換、メッセージ送信などの処理を並列化することで、処理時間を短縮できます。`concurrent.futures`モジュールを使用すると、簡単に並列処理を実装できます。
-*   **データ検証の強化:** 読み込むデータの形式や内容を検証することで、不正なデータによるエラーを防ぐことができます。`pydantic`ライブラリを使用すると、データモデルを定義し、データの検証を簡単に行うことができます。
-*   **メッセージング機能の拡張:** LINEだけでなく、他のメッセージングプラットフォーム（例：Slack, Discord）にも対応できるように、メッセージ送信機能を拡張できます。
+*   **データソースの多様化:** 現在はファイルからの読み込みのみですが、データベース、APIなど、様々なデータソースに対応できるようにインターフェースを抽象化できます。
+*   **モデルの切り替え:** Geminiモデルに固定されていますが、設定ファイルや環境変数でモデル名を指定できるようにすることで、他のLLM（Large Language Model）への切り替えを容易にできます。モデル固有の処理を抽象化するインターフェースを設けることも有効です。
+*   **音声合成の多様化:** OpenAIの音声合成APIに固定されていますが、別の音声合成サービス（Google Cloud Text-to-Speechなど）に対応できるように、設定ファイルや環境変数で音声合成サービスを指定できるようにすることで、他のTTSへの切り替えを容易にできます。
+*   **通知先の拡張:** LINEだけでなく、Slack、Emailなど、他の通知先に対応できるようにインターフェースを抽象化し、設定ファイルで通知先を指定できるようにします。
+*   **エラーハンドリングの強化:** 現在は例外発生時にメッセージを表示して終了するだけですが、ログ出力、リトライ処理、アラート通知などの機能を追加することで、より堅牢なシステムにできます。
+*   **並列処理の導入:** データ分析処理を非同期化または並列化することで、処理時間を短縮できます。
+*   **設定ファイルの導入:** APIキー、ファイルパス、モデル名などをコードに直接記述するのではなく、設定ファイル（JSON、YAMLなど）から読み込むようにすることで、設定変更を容易にできます。
 
 ## 6. 課題
 
-*   **セキュリティ:**
-    *   APIキーがコードにハードコーディングされているため、ソースコードが漏洩した場合に悪用される可能性があります。環境変数やシークレット管理ツールを使用し、APIキーを安全に管理する必要があります。
-    *   LINEのチャンネルアクセストークンも同様に、安全な場所に保管する必要があります。
-*   **可読性:**
-    *   `main`関数が長いため、処理の流れを理解しにくいです。各機能を小さな関数に分割し、モジュール化することで可読性を向上させることができます。
-    *   マジックナンバー(例: `duration: 180000`) が使用されているため、数値の意味がわかりにくいです。定数として定義することで、可読性を向上させることができます。
-*   **保守性:**
-    *   処理が`try-except`ブロックで囲まれているものの、エラー発生時の詳細な情報がログに出力されないため、デバッグが困難になる可能性があります。ログ出力の改善が必要です。
-    *   各機能が密結合になっているため、一部の機能を変更した場合に他の機能に影響を与える可能性があります。APIの抽象化やモジュール化により、疎結合な設計にすることで保守性を向上させることができます。
-*   **脆弱性:**
-    *   `TARGET_FILE` が外部から制御可能な場合、パス操作の脆弱性が発生する可能性があります。入力値の検証や、固定パスを使用するように修正する必要があります。
-*   **その他:**
-    *   `TARGET_FILE = "/path/to/target_file"` は、実際に存在するファイルパスに置き換える必要があります。
-    *   `hoge.csv`へのパスも同様に、正しいパスに修正する必要があります。
-    *   Gemini API, OpenAI API, LINE API のAPIキーとトークンがプレースホルダーのままです。正しい値を設定する必要があります。
+*   **APIキーのハードコーディング:** `GEMINI_API_KEY`、`OPENAI_API_KEY`、`CHANNEL_ACCESS_TOKEN`がソースコードに直接記述されているため、セキュリティ上のリスクがあります。環境変数またはセキュアな設定ファイルから読み込むように変更する必要があります。
+*   **エラーハンドリングの簡素化:** 例外発生時にエラーメッセージを表示して終了するだけなので、ログ出力やリトライ処理などのより高度なエラーハンドリングを実装する必要があります。
+*   **マジックナンバー:** 音声の`duration`が`180000`という数値でハードコーディングされています。この数値の意味を明確にするために、定数として定義し、コメントを追加する必要があります。
+*   **ファイルパスのハードコーディング:** `TARGET_FILE`、`LOG_PATH`、`VOICE_PATH`がハードコーディングされています。これらを環境変数または設定ファイルから読み込むように変更する必要があります。また、相対パスではなく絶対パスを使用しているため、柔軟性に欠けます。
+*   **可読性の改善:** 関数のコメント（docstring）が不足しているため、各関数の役割や引数、戻り値の説明を追加することで、可読性を向上させることができます。
+*   **セキュリティ:** `get_file` でファイルパスを直接使用しているため、ディレクトリトラバーサル攻撃のリスクがあります。ファイルパスのバリデーションを行う必要があります。
+*   **LINEの送信:** CHANNEL_ACCESS_TOKENが重複して定義されています。
+*   **例外処理:** 例外発生時のメッセージが英語です。日本語で出力するように修正する必要があります。
+*   **hoge.csv:** `prompt = get_prompt(get_file("hoge.csv"))`は、デバッグ用でコミットされています。本番環境では`TARGET_FILE`を使用するように戻す必要があります。
