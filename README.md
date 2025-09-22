@@ -1,86 +1,124 @@
 # main.py
 
-## 設計書
+## 1. 概略
 
-### 1. 概略
+このPythonスクリプトは、指定されたファイルから時系列データを読み込み、GoogleのGemini APIを使用してデータを分析し、結果をログファイルに保存します。さらに、OpenAI APIを使用して分析結果を音声に変換し、生成された音声ファイルのURLをLINE Messaging APIを通じて特定のLINEチャンネルに送信します。
 
-このPythonスクリプトは、指定されたファイル（CSVを想定）から時系列データを読み込み、Google Gemini APIを使用してそのデータを分析します。分析結果はテキストファイルとして保存され、OpenAI APIを使用して音声ファイルに変換されます。最後に、生成された音声ファイルのURLをLINE Messaging APIを通じてブロードキャストします。
+主な機能は以下のとおりです。
 
-### 2. アーキテクチャ図
+*   ファイルから時系列データの読み込み
+*   Gemini APIへのリクエスト送信とレスポンスの解析
+*   分析結果のログファイルへの保存
+*   OpenAI APIによるテキスト音声変換
+*   生成された音声ファイルのURLをLINEに送信
+
+## 2. アーキテクチャ図
+
 ```mermaid
 graph LR
-    A[CSV File] --> B(get_file);
-    B --> C(get_prompt);
-    C --> D(create_request_payload);
-    D --> E(get_response);
-    E --> F(extract_generated_text);
-    F --> G(save_file);
-    F --> H(get_voice);
-    H --> I(post_line_voice);
-    E --> J{Gemini API};
-    H --> K{OpenAI API};
-    I --> L{LINE API};
+    A[開始] --> B{ファイル読み込み};
+    B --> C{Gemini APIリクエスト};
+    C --> D{Gemini APIレスポンス解析};
+    D --> E{結果をファイルに保存};
+    E --> F{OpenAI APIで音声変換};
+    F --> G{LINE APIで音声URLを送信};
+    G --> H[終了];
+
+    style A fill:#f9f,stroke:#333,stroke-width:2px
+    style H fill:#f9f,stroke:#333,stroke-width:2px
+    style B fill:#ccf,stroke:#333,stroke-width:2px
+    style C fill:#ccf,stroke:#333,stroke-width:2px
+    style D fill:#ccf,stroke:#333,stroke-width:2px
+    style E fill:#ccf,stroke:#333,stroke-width:2px
+    style F fill:#ccf,stroke:#333,stroke-width:2px
+    style G fill:#ccf,stroke:#333,stroke-width:2px
 ```
 
-### 3. シーケンス図
+## 3. シーケンス図
 
 ```mermaid
 sequenceDiagram
-    participant Main
+    participant Script
     participant File
-    participant Gemini
-    participant OpenAI
-    participant Line
-    participant Log
+    participant GeminiAPI
+    participant OpenAIAPI
+    participant LineAPI
 
-    Main->>File: get_file("hoge.csv")
-    File-->>Main: text_data
-    Main->>Main: get_prompt(text_data)
-    Main->>Main: create_request_payload(prompt)
-    Main->>Gemini: get_response(GEMINI_ENDPOINT, payload)
-    Gemini-->>Main: response_json
-    Main->>Main: extract_generated_text(response_json)
-    Main->>Log: save_file(response_text, file_name_log)
-    Log-->>Main: 
-    Main->>OpenAI: get_voice(response_text, file_full_path, OPENAI_API_KEY, "alloy")
-    OpenAI-->>Main: 
-    Main->>Line: post_line_voice(url, LINE_ENDPOINT, CHANNEL_ACCESS_TOKEN)
-    Line-->>Main:
+    Script->>File: ファイル読み込み
+    activate File
+    File-->>Script: データ
+    deactivate File
+
+    Script->>GeminiAPI: リクエスト送信(データ分析)
+    activate GeminiAPI
+    GeminiAPI-->>Script: レスポンス(分析結果)
+    deactivate GeminiAPI
+
+    Script->>File: 結果をファイルに保存
+    activate File
+    File-->>Script: 保存完了
+    deactivate File
+
+    Script->>OpenAIAPI: 音声変換リクエスト(分析結果)
+    activate OpenAIAPI
+    OpenAIAPI-->>Script: 音声ファイル
+    deactivate OpenAIAPI
+
+    Script->>LineAPI: 音声URLをLINEに送信
+    activate LineAPI
+    LineAPI-->>Script: 送信完了
+    deactivate LineAPI
 ```
 
-### 4. フローチャート
-不要
+## 4. フローチャート
 
-### 5. 拡張性
+```mermaid
+graph TD
+    A[開始] --> B{ファイル読み込み};
+    B -- 成功 --> C{Gemini APIリクエスト};
+    B -- 失敗 --> E[エラー処理];
+    C -- 成功 --> D{Gemini APIレスポンス解析};
+    C -- 失敗 --> E;
+    D -- 成功 --> F{結果をファイルに保存};
+    D -- 失敗 --> E;
+    F -- 成功 --> G{OpenAI APIで音声変換};
+    F -- 失敗 --> E;
+    G -- 成功 --> H{LINE APIで音声URLを送信};
+    G -- 失敗 --> E;
+    H -- 成功 --> I[終了];
+    H -- 失敗 --> E;
+    E --> J[エラーログ出力];
+    J --> I;
+```
 
-*   **データソースの拡張:** 現在はファイルからのデータ読み込みのみですが、データベースやAPIエンドポイントからデータを取得する機能を追加できます。
-*   **分析モデルの拡張:** Gemini APIだけでなく、他のLLMや機械学習モデルを組み込むことで、より多様な分析結果を得られます。設定ファイル等でモデルを選択できるようにすると柔軟性が高まります。
-*   **出力形式の拡張:** テキストファイル以外にも、JSON、CSV、HTMLなど、様々な形式で分析結果を保存できるようにします。
-*   **通知先の拡張:** LINE以外にも、Slack、Emailなど、複数の通知先に対応できるようにします。
-*   **音声合成の拡張:** OpenAI以外にも音声合成APIの選択肢を増やし、声の種類や言語をユーザーが選択できるようにします。
-*   **APIキー管理の強化:** APIキーをコードに直接記述するのではなく、環境変数や設定ファイルから読み込むように変更することで、セキュリティを向上させることができます。
-*   **エラーハンドリングの改善:** 例外処理を細かく行い、エラー発生時に詳細なログを出力するようにします。
-*   **設定ファイルの導入:** APIキー、ファイルパス、モデル名などの設定値を、コードではなく設定ファイル（例：YAML）から読み込むようにすることで、コードの変更なしに設定を変更できます。
+## 5. 拡張性
 
-### 6. 課題
+*   **APIキー管理:** 現在、APIキーがコードに直接埋め込まれています。環境変数や安全なキー管理システム（例：HashiCorp Vault）を使用するように変更することで、セキュリティを向上させることができます。
+*   **設定ファイル:**  `TARGET_FILE`、`LOG_PATH`、`VOICE_PATH`、`VOICE_URL`などの設定をコードから分離し、設定ファイル（JSON, YAMLなど）で管理するように変更することで、柔軟性を高めることができます。
+*   **モジュール化:** 各機能（ファイル読み込み、API呼び出し、音声変換、LINE送信）を個別のモジュールに分割することで、コードの再利用性とテスト容易性を向上させることができます。
+*   **エラー処理の改善:**  `main`関数内の`try-except`ブロックでエラー発生時の処理を詳細化し、エラーの種類に応じて適切な処理を行うように変更することで、システムの安定性を高めることができます。例えば、APIレート制限エラーが発生した場合は、リトライ処理を追加するなどが考えられます。
+*   **非同期処理:**  Gemini API、OpenAI API、LINE APIへのリクエストを非同期処理にすることで、全体の処理時間を短縮することができます。`asyncio`ライブラリを使用することが考えられます。
+*   **データ変換処理の追加:** 読み込んだデータに対して、データクリーニングや変換処理を行うことで、Gemini APIの分析精度を向上させることができます。
+*   **ログレベルの変更:** `print`文によるログ出力だけでなく、loggingライブラリを導入し、ログレベル(DEBUG, INFO, WARNING, ERROR, CRITICAL)を設定できるようにすることで、デバッグや運用時の情報収集を効率化することができます。
+*    **音声変換ロジックの分離**: `get_voice`関数内で、`openai.api_key`を設定していますが、この処理はOpenAIクライアントの初期化時に一度だけ行うのが適切です。音声変換に関するロジックをクラスとして分離し、クライアントの初期化をコンストラクタで行うように変更することで、よりオブジェクト指向な設計にすることができます。また、音声の種類（`voice_type`）を動的に変更できるようにすることで、柔軟性を高めることができます。
+
+## 6. 課題
 
 *   **セキュリティ:**
-    *   APIキーがコードにハードコーディングされているため、非常に危険です。環境変数またはセキュアな設定ファイルに移行する必要があります。
-    *   TARGET_FILE, VOICE_PATHといったファイルパスが固定されているのも変更されるべきです。
+    *   APIキーがソースコードにハードコードされているため、セキュリティ上のリスクがあります。環境変数や専用のシークレット管理システムを使用する必要があります。
+    *   ファイルのパスがハードコードされている箇所があり、ファイル操作に関する脆弱性のリスクがあります。
 *   **可読性:**
-    *   `get_prompt`関数のプロンプトが長いため、可読性が低い可能性があります。プロンプトを外部ファイルに分離するか、より簡潔に記述することを検討します。
-    *   エラーメッセージが一部英語、一部日本語で統一されていません。
+    *   `main`関数が長くなっているため、可読性が低い可能性があります。関数を分割し、それぞれの責務を明確にすることで可読性を向上させることができます。
+    *   エラーメッセージが簡潔すぎるため、問題の特定が難しい場合があります。より詳細なエラーメッセージを出力するように変更する必要があります。
 *   **保守性:**
-    *   マジックナンバー（例：`duration: 180000`）がコードに直接記述されているため、意味が分かりにくいです。定数として定義することを推奨します。
-    *   LINE Messaging APIのメッセージタイプが`audio`で固定されています。他のメッセージタイプ（テキスト、画像など）にも対応できるように、拡張性を考慮した設計にする必要があります。
-*   **エラーハンドリング:**
-    *   `main`関数内の`try...except`ブロックが広すぎるため、どこでエラーが発生したか特定しにくい場合があります。より細かく分割し、具体的なエラーメッセージを返すように改善します。
-*   **依存関係:**
-    *   ライブラリのバージョン管理がされていないため、依存関係が壊れる可能性があります。`requirements.txt`などで依存関係を明示的に管理する必要があります。
-*   **ファイルパス:**
-    *   `TARGET_FILE = "/path/to/target_file"`がハードコードされているため、汎用性が低いです。コマンドライン引数や設定ファイルから指定できるように変更します。
-    *   `LOG_PATH`の計算が冗長です。`os.path.join`を使用すると、よりシンプルに記述できます。
-    *   `get_file("hoge.csv")` がハードコードされているため、汎用性が低いです。コマンドライン引数や設定ファイルから指定できるように変更します。
-* **その他**
-    *  同じトークンが２回定義されている
-
+    *   APIエンドポイントやトークンがコードに直接記述されているため、変更時の影響範囲が大きいです。設定ファイルに分離することで、保守性を向上させることができます。
+    *   例外処理が一律に`Exception`をキャッチしているため、特定のエラーに対する適切な処理ができません。具体的な例外クラスを指定して、エラーの種類に応じた処理を行うようにする必要があります。
+*   **堅牢性:**
+    *   APIリクエストが失敗した場合のリトライ処理がないため、一時的なネットワークエラーなどが発生した場合に処理が中断してしまいます。リトライ処理を実装する必要があります。
+    *   入力データのバリデーションが行われていないため、不正なデータが入力された場合に予期せぬエラーが発生する可能性があります。入力データのバリデーション処理を追加する必要があります。
+*   **テスト容易性:**
+    *   外部APIへの依存度が高いため、テストが難しいです。モックオブジェクトを使用するなどして、外部APIへの依存を解消する必要があります。
+*   **その他**
+    *   `CHANNEL_ACCESS_TOKEN`が2回定義されています。意図しない記述なので修正する必要があります。
+    *   `get_file`関数内で例外処理が記述されていないため、ファイルが存在しない場合にエラーが発生し、プログラムが停止する可能性があります。例外処理を追加する必要があります。
+    *   ファイル名が`hoge.csv`でハードコードされている箇所があります。本来意図している`TARGET_FILE`を使用するように修正してください。
