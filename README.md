@@ -1,76 +1,86 @@
 # main.py
 
-## 1. 概略
+## 設計書
 
-このPythonスクリプトは、指定されたファイル（ここでは"hoge.csv"を読み込むよう変更されています）から時系列データを読み込み、GoogleのGemini APIを使用してそのデータを分析します。分析結果はファイルに保存され、OpenAIのAPIを使用して音声に変換されます。最後に、生成された音声ファイルのURLをLINE Messaging API経由で指定されたチャネルに送信します。  主要な処理は、データ取得、Gemini APIへのリクエスト、レスポンス解析、ファイル保存、音声合成、LINEへの通知です。
+### 1. 概略
 
-## 2. アーキテクチャ図
+このPythonスクリプトは、指定されたファイル（CSVを想定）から時系列データを読み込み、Google Gemini APIを使用してそのデータを分析します。分析結果はテキストファイルとして保存され、OpenAI APIを使用して音声ファイルに変換されます。最後に、生成された音声ファイルのURLをLINE Messaging APIを通じてブロードキャストします。
 
-ファイルがyamlやymlではないため、アーキテクチャ図は不要です。
+### 2. アーキテクチャ図
+```mermaid
+graph LR
+    A[CSV File] --> B(get_file);
+    B --> C(get_prompt);
+    C --> D(create_request_payload);
+    D --> E(get_response);
+    E --> F(extract_generated_text);
+    F --> G(save_file);
+    F --> H(get_voice);
+    H --> I(post_line_voice);
+    E --> J{Gemini API};
+    H --> K{OpenAI API};
+    I --> L{LINE API};
+```
 
-## 3. シーケンス図
+### 3. シーケンス図
 
 ```mermaid
 sequenceDiagram
-    participant main()
-    participant get_prompt()
-    participant get_file()
-    participant create_request_payload()
-    participant get_response()
-    participant extract_generated_text()
-    participant save_file()
-    participant get_voice()
-    participant post_line_voice()
-    participant Gemini API
-    participant OpenAI API
-    participant LINE Messaging API
+    participant Main
+    participant File
+    participant Gemini
+    participant OpenAI
+    participant Line
+    participant Log
 
-    main() -> get_file(): "hoge.csv"
-    get_file() -->> main(): text_data
-    main() -> get_prompt(): text_data
-    get_prompt() -->> main(): prompt
-    main() -> create_request_payload(): prompt
-    create_request_payload() -->> main(): payload
-    main() -> get_response(): GEMINI_ENDPOINT, payload
-    get_response() -> Gemini API: POST request (prompt)
-    Gemini API -->> get_response(): response_json
-    get_response() -->> main(): response_json
-    main() -> extract_generated_text(): response_json
-    extract_generated_text() -->> main(): response_text
-    main() -> save_file(): response_text, file_name_log
-    main() -> get_voice(): response_text, file_full_path, OPENAI_API_KEY, "alloy"
-    get_voice() -> OpenAI API: Speech create (response_text)
-    OpenAI API -->> get_voice(): voice_data
-    get_voice() -->> main():
-    main() -> post_line_voice(): url, LINE_ENDPOINT, CHANNEL_ACCESS_TOKEN
-    post_line_voice() -> LINE Messaging API: POST request (url)
-    LINE Messaging API -->> post_line_voice(): response
-    post_line_voice() -->> main(): response
+    Main->>File: get_file("hoge.csv")
+    File-->>Main: text_data
+    Main->>Main: get_prompt(text_data)
+    Main->>Main: create_request_payload(prompt)
+    Main->>Gemini: get_response(GEMINI_ENDPOINT, payload)
+    Gemini-->>Main: response_json
+    Main->>Main: extract_generated_text(response_json)
+    Main->>Log: save_file(response_text, file_name_log)
+    Log-->>Main: 
+    Main->>OpenAI: get_voice(response_text, file_full_path, OPENAI_API_KEY, "alloy")
+    OpenAI-->>Main: 
+    Main->>Line: post_line_voice(url, LINE_ENDPOINT, CHANNEL_ACCESS_TOKEN)
+    Line-->>Main:
 ```
 
-## 4. フローチャート
+### 4. フローチャート
+不要
 
-ファイルがyamlやymlではないため、フローチャートは不要です。
+### 5. 拡張性
 
-## 5. 拡張性
+*   **データソースの拡張:** 現在はファイルからのデータ読み込みのみですが、データベースやAPIエンドポイントからデータを取得する機能を追加できます。
+*   **分析モデルの拡張:** Gemini APIだけでなく、他のLLMや機械学習モデルを組み込むことで、より多様な分析結果を得られます。設定ファイル等でモデルを選択できるようにすると柔軟性が高まります。
+*   **出力形式の拡張:** テキストファイル以外にも、JSON、CSV、HTMLなど、様々な形式で分析結果を保存できるようにします。
+*   **通知先の拡張:** LINE以外にも、Slack、Emailなど、複数の通知先に対応できるようにします。
+*   **音声合成の拡張:** OpenAI以外にも音声合成APIの選択肢を増やし、声の種類や言語をユーザーが選択できるようにします。
+*   **APIキー管理の強化:** APIキーをコードに直接記述するのではなく、環境変数や設定ファイルから読み込むように変更することで、セキュリティを向上させることができます。
+*   **エラーハンドリングの改善:** 例外処理を細かく行い、エラー発生時に詳細なログを出力するようにします。
+*   **設定ファイルの導入:** APIキー、ファイルパス、モデル名などの設定値を、コードではなく設定ファイル（例：YAML）から読み込むようにすることで、コードの変更なしに設定を変更できます。
 
-*   **モデルの選択:**  Gemini APIやOpenAI APIで使用するモデル名をパラメータ化することで、簡単に異なるモデルを試せるようにできます。
-*   **データソースの追加:**  `get_file()` 関数を抽象化し、異なるデータソース（データベース、APIなど）からデータを取得できるようにインターフェースを追加できます。
-*   **音声のカスタマイズ:**  `get_voice()` 関数で、音声の種類（`voice_type`）、速度（`speed`）以外のパラメータ（ピッチ、音量など）も調整できるようにAPIに合わせ拡張できます。
-*   **通知先の拡張:** LINEだけでなく、他の通知サービス（Slack, Emailなど）への通知機能を追加できます。通知処理を抽象化し、共通インターフェースを定義することで、容易に拡張できます。
-*   **エラーハンドリングの改善:** 各処理ブロックに詳細なエラーハンドリングとロギングを追加することで、問題発生時の追跡とデバッグが容易になります。例外処理をより細かく設定し、特定の例外に対して適切な対応を行うように変更できます。
+### 6. 課題
 
-## 6. 課題
-
-*   **APIキーのハードコーディング:** APIキー (`GEMINI_API_KEY`, `OPENAI_API_KEY`, `CHANNEL_ACCESS_TOKEN`) がコードに直接埋め込まれているため、セキュリティ上のリスクがあります。環境変数や設定ファイルから読み込むように変更する必要があります。
-*   **例外処理:** エラーメッセージがExceptionをそのまま表示しているため、詳細がわかりにくいです。より具体的なエラーメッセージを返すように改善すべきです。
-*   **マジックナンバー:** `post_line_voice`関数のdurationに180000というマジックナンバーが使用されています。これは3分をミリ秒で表したものですが、コメントを追加するか、意味のある定数に置き換えるべきです。
-*   **ファイルパスのハードコーディング:** `TARGET_FILE`, `VOICE_PATH`, `LOG_PATH`がハードコーディングされているため、柔軟性がありません。設定ファイルやコマンドライン引数で指定できるようにするのが望ましいです。
-*   **非同期処理の欠如:** APIリクエストや音声合成などの処理は時間がかかる可能性があります。非同期処理（`asyncio`など）を導入することで、処理全体のパフォーマンスを向上させることができます。
-*   **可読性:** `get_prompt`関数のプロンプトが長いため、可読性が低い可能性があります。プロンプトを外部ファイルに分離するか、適切なコメントを追加することで、可読性を向上させることができます。
-*   **ログ出力:** すべての処理が成功した場合のログ出力しかありません。エラー発生時のログ出力も追加することで、問題発生時の原因特定が容易になります。
-*   **型ヒント:** 型ヒントは書かれていますが、すべての箇所で徹底されているわけではありません。すべての関数、変数に対して適切な型ヒントを付与することで、可読性と保守性を向上させることができます。
-*   **リトライ処理:** APIリクエストが失敗した場合、リトライ処理がないため、一時的なネットワーク障害などで処理が中断してしまう可能性があります。リトライ処理を実装することで、システムの安定性を向上させることができます。
-*   **セキュリティ:**  LINE Notify APIを使用する際、メッセージ送信権限を持つユーザーのアクセストークンを安全に管理する必要があります。
-*   **ファイルパス:** `TARGET_FILE`が`/path/to/target_file`のような存在しないパスになっている。また`get_file`内で例外を握りつぶしているため、ファイルが存在しない場合にエラーが発生せず、後続処理でエラーが発生する可能性がある。
+*   **セキュリティ:**
+    *   APIキーがコードにハードコーディングされているため、非常に危険です。環境変数またはセキュアな設定ファイルに移行する必要があります。
+    *   TARGET_FILE, VOICE_PATHといったファイルパスが固定されているのも変更されるべきです。
+*   **可読性:**
+    *   `get_prompt`関数のプロンプトが長いため、可読性が低い可能性があります。プロンプトを外部ファイルに分離するか、より簡潔に記述することを検討します。
+    *   エラーメッセージが一部英語、一部日本語で統一されていません。
+*   **保守性:**
+    *   マジックナンバー（例：`duration: 180000`）がコードに直接記述されているため、意味が分かりにくいです。定数として定義することを推奨します。
+    *   LINE Messaging APIのメッセージタイプが`audio`で固定されています。他のメッセージタイプ（テキスト、画像など）にも対応できるように、拡張性を考慮した設計にする必要があります。
+*   **エラーハンドリング:**
+    *   `main`関数内の`try...except`ブロックが広すぎるため、どこでエラーが発生したか特定しにくい場合があります。より細かく分割し、具体的なエラーメッセージを返すように改善します。
+*   **依存関係:**
+    *   ライブラリのバージョン管理がされていないため、依存関係が壊れる可能性があります。`requirements.txt`などで依存関係を明示的に管理する必要があります。
+*   **ファイルパス:**
+    *   `TARGET_FILE = "/path/to/target_file"`がハードコードされているため、汎用性が低いです。コマンドライン引数や設定ファイルから指定できるように変更します。
+    *   `LOG_PATH`の計算が冗長です。`os.path.join`を使用すると、よりシンプルに記述できます。
+    *   `get_file("hoge.csv")` がハードコードされているため、汎用性が低いです。コマンドライン引数や設定ファイルから指定できるように変更します。
+* **その他**
+    *  同じトークンが２回定義されている
 
